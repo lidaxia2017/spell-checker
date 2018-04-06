@@ -4,10 +4,11 @@ import numpy as np
 import sys
 import re
 import string
+from collections import Counter
 
 def init_matrix():
   """only take care of lower letters
-    #: empty
+    #: empty char
   """
   chars = 'abcdefghijklmnopqrstuvwxyz'
   o = {}
@@ -16,6 +17,19 @@ def init_matrix():
     for char2 in chars:
       o[char1+char2] = 0
   return o
+
+def words(text):
+  return re.findall(r'\w+', text.lower())
+
+CORPUS = open('./corpus.txt').read()
+WORDS = Counter(words(CORPUS))
+N=sum(WORDS.values())
+CONFUSION_MATRIX = {
+  'ins': init_matrix(),
+  'del': init_matrix(),
+  'subs': init_matrix(),
+  'trans': init_matrix(),
+}
 
 def print_matrix(matrix):
   chars = 'abcdefghijklmnopqrstuvwxyz'
@@ -31,63 +45,131 @@ def print_matrix(matrix):
         print('{:>4}'.format(matrix[key][row+col]), end='')
       print()
 
-confusion_matrix = {
-  'insertion': init_matrix(),
-  'deletion': init_matrix(),
-  'substitution': init_matrix(),
-  'transposition': init_matrix(),
-}
-
 def cal_confusion_matrix(case, correct, typo, count):
-  if case == 'insertion':
+  if case == 'ins':
     for idx in range(len(typo)):
       if correct == typo[:idx] + typo[idx+1:]:
-        if idx == 0:
-          confusion_matrix['insertion']['#'+typo[:1]] += int(count)
-        else:
-          confusion_matrix['insertion'][typo[idx-1:idx+1]] += int(count)
-  elif case == 'deletion':
+        xy = '#'+typo[:1] if idx == 0 else typo[idx-1:idx+1]
+        CONFUSION_MATRIX['ins'][xy] += int(count)
+  elif case == 'del':
     for idx in range(len(correct)):
-      if correct[:idx] + correct[idx+1:] == typo:
-        if idx == 0:
-          confusion_matrix['deletion']['#'+correct[:1]] += int(count)
-        else:
-          confusion_matrix['deletion'][correct[idx-1:idx+1]] += int(count)
-  elif case == 'substitution':
+      if correct == typo[:idx] + correct[idx] + typo[idx:]:
+        xy = '#'+correct[:1] if idx == 0 else correct[idx-1:idx+1]
+        CONFUSION_MATRIX['del'][xy] += int(count)
+  elif case == 'subs':
     for idx in range(len(typo)):
       for char in 'abcdefghijklmnopqrstuvwxyz':
         if correct == typo[:idx] + char + typo[idx+1:]:
-          confusion_matrix['substitution'][char+typo[idx]] += int(count)
-  elif case == 'transposition':
+          xy = char+typo[idx]
+          CONFUSION_MATRIX['subs'][xy] += int(count)
+  elif case == 'trans':
     for idx in range(len(correct)-1):
       if correct == typo[:idx] + typo[idx+1] + typo[idx] + typo[idx+2:]:
-        confusion_matrix['transposition'][typo[idx+1] + typo[idx]] += int(count)
-  # else:
-  #   print(case, correct, typo, count)
+        xy = typo[idx+1] + typo[idx]
+        CONFUSION_MATRIX['trans'][xy] += int(count)
 
-fname = './spellerror.txt'
-with open(fname) as f:
+def init_confusion_matrix():
+  fname = './spellerror.txt'
+  with open(fname) as f:
     lines = f.readlines()
-lines = [x.strip() for x in lines]
-
-for line in lines:
-  correct, typos = [word.strip().lower() for word in line.split(':')]
-  if not re.match("^[a-z]*$", correct):
-    continue
-  for typo in [typo.strip() for typo in typos.split(',')]:
-    if not re.match("^[a-z]*$", typo):
+  lines = [x.strip() for x in lines]
+  for line in lines:
+    correct, typos = [word.strip().lower() for word in line.split(':')]
+    if not re.match("^[a-z]*$", correct):
       continue
-    count = 1
-    if '*' in typo:
-      typo, count = typo.split('*')
-    if len(correct) == len(typo) - 1:
-      cal_confusion_matrix('insertion', correct, typo, count)
-    elif len(correct) == len(typo) + 1:
-      cal_confusion_matrix('deletion', correct, typo, count)
-    elif len(correct) == len(typo):
-      cal_confusion_matrix('substitution', correct, typo, count)
-      cal_confusion_matrix('transposition', correct, typo, count)
-    # else:
-    #   cal_confusion_matrix('***', correct, typo, count)
+    for typo in [typo.strip() for typo in typos.split(',')]:
+      if not re.match("^[a-z]*$", typo):
+        continue
+      count = 1
+      if '*' in typo:
+        typo, count = typo.split('*')
+      if len(correct) == len(typo) - 1:
+        cal_confusion_matrix('ins', correct, typo, count)
+      elif len(correct) == len(typo) + 1:
+        cal_confusion_matrix('del', correct, typo, count)
+      elif len(correct) == len(typo):
+        cal_confusion_matrix('subs', correct, typo, count)
+        cal_confusion_matrix('trans', correct, typo, count)
 
-print_matrix(confusion_matrix)
+def cal_candidates(word):
+    "All edits that are one edit away from `word`."
+    o = {}
+    letters = 'abcdefghijklmnopqrstuvwxyz'
+    splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
+    o['ins'] = [L + R[1:] for L, R in splits if R]
+    o['del'] = [L + c + R for L, R in splits for c in letters]
+    o['subs'] = [L + c + R[1:] for L, R in splits if R for c in letters]
+    o['trans'] = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R)>1]
+    return o
+
+def valid(words):
+  return set(w for w in words if w in WORDS)
+
+def compare(candidates, typo):
+  o = {}
+  for key in candidates.keys():
+    for c in candidates[key]:
+      if key == 'ins':
+        for idx in range(len(typo)):
+          if c == typo[:idx] + typo[idx+1:]:
+            xy = '#' + typo[idx] if idx == 0 else typo[idx-1:idx+1]
+            print_candidate(o, c, key, xy, xy[0])
+      elif key == 'del':
+        for idx in range(len(c)):
+          if c[:idx] + c[idx+1:] == typo:
+            xy = '#'+c[idx] if idx == 0 else c[idx-1:idx+1]
+            print_candidate(o, c, key, xy, xy)
+      elif key == 'subs':
+        for idx in range(len(typo)):
+          for char in 'abcdefghijklmnopqrstuvwxyz':
+            if c == typo[:idx] + char + typo[idx+1:]:
+              xy = char+typo[idx]
+              print_candidate(o, c, key, xy, xy[1])
+      elif key == 'trans':
+        for idx in range(len(c)-1):
+          if c == typo[:idx] + typo[idx+1] + typo[idx] + typo[idx+2:]:
+            xy = typo[idx+1] + typo[idx]
+            print_candidate(o, c, key, xy, xy)
+  print('The most possible correct word is: ', max(o, key=o.get))
+
+def print_table_title():
+  print('{:>10}'.format('Method'), end='')
+  print('{:>16}'.format('Candidate'), end='')
+  print('{:>10}'.format('Freq(c)'), end='')
+  print('{:>16}'.format('P(c)'), end='')
+  print('{:>10}'.format('C[XY]'), end='')
+  print('{:>10}'.format('Total'), end='')
+  print('{:>16}'.format('P(t|c)'), end='')
+  print('{:>16}'.format('P(t|c)*P(c)'), end='')
+  print('')
+
+def print_candidate(o, c, key, numerator, denominator):
+  if denominator == '#': denominator = ''
+  print('{:>10}'.format(key+'['+numerator+']'), end='')
+  print('{:>16}'.format(c), end='')
+  print('{:>10}'.format(WORDS[c]), end='')
+  pc = WORDS[c] / N
+  print('{:>16}'.format('{:.4e}'.format(pc)), end='')
+  ptc = CONFUSION_MATRIX[key][numerator]/CORPUS.count(denominator)
+  print('{:>10}'.format(CONFUSION_MATRIX[key][numerator]), end='')
+  print('{:>10}'.format(CORPUS.count(denominator)), end='')
+  print('{:>16}'.format('{:.4e}'.format(ptc)), end='')
+  print('{:>16}'.format('{:.4e}'.format(pc * ptc)), end='')
+  print('')
+  o[c] = o.get(c, 0) + pc * ptc
+
+def main():
+  init_confusion_matrix()
+  typo = sys.argv[1]
+  if typo in WORDS:
+    print('This is a correct word')
+  else:
+    candidates = cal_candidates(typo)
+    valid_candidates = {}
+    for key in list(candidates.keys()):
+      valid_candidates[key] = valid(candidates[key])
+    print_table_title()
+    compare(valid_candidates, typo)
+
+if __name__ == "__main__":
+    main()
