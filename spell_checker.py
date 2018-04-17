@@ -4,6 +4,7 @@ import numpy as np
 import sys
 import re
 import string
+import bigram
 from collections import Counter
 
 def init_matrix():
@@ -19,7 +20,8 @@ def init_matrix():
   return o
 
 def words(text):
-  return re.findall(r'\w+', text.lower())
+  return re.findall(r'\w+', text)
+  # return re.findall(r'\w+', text.lower())
 
 CORPUS = open('./corpus.txt').read()
 WORDS = Counter(words(CORPUS))
@@ -105,32 +107,34 @@ def cal_candidates(word):
 def valid(words):
   return set(w for w in words if w in WORDS)
 
-def compare(candidates, typo):
+def compare(candidates, typo, words):
   o = {}
+  s = {}
   for key in candidates.keys():
     for c in candidates[key]:
       if key == 'ins':
         for idx in range(len(typo)):
           if c == typo[:idx] + typo[idx+1:]:
             xy = '#' + typo[idx] if idx == 0 else typo[idx-1:idx+1]
-            print_candidate(o, c, key, xy, xy[0])
+            print_candidate(o, c, key, xy, xy[0], typo, words, s)
       elif key == 'del':
         for idx in range(len(c)):
           if c[:idx] + c[idx+1:] == typo:
             xy = '#'+c[idx] if idx == 0 else c[idx-1:idx+1]
-            print_candidate(o, c, key, xy, xy)
+            print_candidate(o, c, key, xy, xy, typo, words, s)
       elif key == 'subs':
         for idx in range(len(typo)):
           for char in 'abcdefghijklmnopqrstuvwxyz':
             if c == typo[:idx] + char + typo[idx+1:]:
               xy = char+typo[idx]
-              print_candidate(o, c, key, xy, xy[1])
+              print_candidate(o, c, key, xy, xy[1], typo, words, s)
       elif key == 'trans':
         for idx in range(len(c)-1):
           if c == typo[:idx] + typo[idx+1] + typo[idx] + typo[idx+2:]:
             xy = typo[idx+1] + typo[idx]
-            print_candidate(o, c, key, xy, xy)
+            print_candidate(o, c, key, xy, xy, typo, words, s)
   print('The most possible correct word is: ', max(o, key=o.get))
+  print('The most possible correct sentence is: ', max(s, key=s.get))
 
 def print_table_title():
   print('{:>10}'.format('Method'), end='')
@@ -141,9 +145,11 @@ def print_table_title():
   print('{:>10}'.format('Total'), end='')
   print('{:>16}'.format('P(t|c)'), end='')
   print('{:>16}'.format('P(t|c)*P(c)'), end='')
+  print('{:>16}'.format('P(bigram(S))'), end='')
   print('')
 
-def print_candidate(o, c, key, numerator, denominator):
+def print_candidate(o, c, key, numerator, denominator, typo, words, s):
+  sentence = words.replace(typo, c)
   if denominator == '#': denominator = ''
   print('{:>10}'.format(key+'['+numerator+']'), end='')
   print('{:>16}'.format(c), end='')
@@ -155,21 +161,28 @@ def print_candidate(o, c, key, numerator, denominator):
   print('{:>10}'.format(CORPUS.count(denominator)), end='')
   print('{:>16}'.format('{:.4e}'.format(ptc)), end='')
   print('{:>16}'.format('{:.4e}'.format(pc * ptc)), end='')
+  ps = bigram.bb(sentence)
   print('')
   o[c] = o.get(c, 0) + pc * ptc
+  s[sentence] = ps
 
 def main():
   init_confusion_matrix()
-  typo = sys.argv[1]
-  if typo in WORDS:
-    print('This is a correct word')
+  words = sys.argv[1]
+  typo = ''
+  for word in words.split(' '):
+    if word not in WORDS:
+      typo = word
+      break
+  if typo == '':
+    print('There is no spell error.')
   else:
     candidates = cal_candidates(typo)
     valid_candidates = {}
     for key in list(candidates.keys()):
       valid_candidates[key] = valid(candidates[key])
     print_table_title()
-    compare(valid_candidates, typo)
+    compare(valid_candidates, typo, words)
 
 if __name__ == "__main__":
     main()
