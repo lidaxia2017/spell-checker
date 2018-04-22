@@ -20,8 +20,7 @@ def init_matrix():
   return o
 
 def words(text):
-  return re.findall(r'\w+', text)
-  # return re.findall(r'\w+', text.lower())
+  return re.findall(r'[a-zA-Z-,.\']+', text)
 
 CORPUS = open('./corpus.txt').read()
 WORDS = Counter(words(CORPUS))
@@ -110,31 +109,33 @@ def valid(words):
 def compare(candidates, typo, words):
   o = {}
   s = {}
+  h = {}
   for key in candidates.keys():
     for c in candidates[key]:
       if key == 'ins':
         for idx in range(len(typo)):
           if c == typo[:idx] + typo[idx+1:]:
             xy = '#' + typo[idx] if idx == 0 else typo[idx-1:idx+1]
-            print_candidate(o, c, key, xy, xy[0], typo, words, s)
+            print_candidate(o, c, key, xy, xy[0], typo, words, s, h)
       elif key == 'del':
         for idx in range(len(c)):
           if c[:idx] + c[idx+1:] == typo:
             xy = '#'+c[idx] if idx == 0 else c[idx-1:idx+1]
-            print_candidate(o, c, key, xy, xy, typo, words, s)
+            print_candidate(o, c, key, xy, xy, typo, words, s, h)
       elif key == 'subs':
         for idx in range(len(typo)):
           for char in 'abcdefghijklmnopqrstuvwxyz':
             if c == typo[:idx] + char + typo[idx+1:]:
               xy = char+typo[idx]
-              print_candidate(o, c, key, xy, xy[1], typo, words, s)
+              print_candidate(o, c, key, xy, xy[1], typo, words, s, h)
       elif key == 'trans':
         for idx in range(len(c)-1):
           if c == typo[:idx] + typo[idx+1] + typo[idx] + typo[idx+2:]:
             xy = typo[idx+1] + typo[idx]
-            print_candidate(o, c, key, xy, xy, typo, words, s)
+            print_candidate(o, c, key, xy, xy, typo, words, s, h)
   print('The most possible correct word is: ', max(o, key=o.get))
   print('The most possible correct sentence is: ', max(s, key=s.get))
+  print('The most possible correct sentence is: ', max(h, key=h.get))
 
 def print_table_title():
   print('{:>10}'.format('Method'), end='')
@@ -146,9 +147,10 @@ def print_table_title():
   print('{:>16}'.format('P(t|c)'), end='')
   print('{:>16}'.format('P(t|c)*P(c)'), end='')
   print('{:>16}'.format('P(bigram(S))'), end='')
+  print('{:>16}'.format('Hybrid'), end='')
   print('')
 
-def print_candidate(o, c, key, numerator, denominator, typo, words, s):
+def print_candidate(o, c, key, numerator, denominator, typo, words, s, h):
   sentence = words.replace(typo, c)
   if denominator == '#': denominator = ''
   print('{:>10}'.format(key+'['+numerator+']'), end='')
@@ -162,9 +164,11 @@ def print_candidate(o, c, key, numerator, denominator, typo, words, s):
   print('{:>16}'.format('{:.4e}'.format(ptc)), end='')
   print('{:>16}'.format('{:.4e}'.format(pc * ptc)), end='')
   ps = bigram.bb(sentence)
+  print('{:>16}'.format('{:.4e}'.format(pc * ptc * ps)), end='')
   print('')
   o[c] = o.get(c, 0) + pc * ptc
-  s[sentence] = ps
+  s[sentence] = s.get(sentence, 0) + ps
+  h[sentence] = h.get(sentence, 0) + pc * ptc * ps
 
 def main():
   init_confusion_matrix()
