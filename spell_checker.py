@@ -20,7 +20,7 @@ def init_matrix():
   return o
 
 def words(text):
-  return re.findall(r'[a-zA-Z-,.\']+', text)
+  return re.findall(r'[a-zA-Z,.\'\-]+', text)
 
 CORPUS = open('./corpus.txt').read()
 WORDS = Counter(words(CORPUS))
@@ -121,7 +121,7 @@ def compare(candidates, typo, words):
         for idx in range(len(c)):
           if c[:idx] + c[idx+1:] == typo:
             xy = '#'+c[idx] if idx == 0 else c[idx-1:idx+1]
-            print_candidate(o, c, key, xy, xy, typo, words, s, h)
+            print_candidate(o, c, key, xy, xy.replace('#', ''), typo, words, s, h)
       elif key == 'subs':
         for idx in range(len(typo)):
           for char in 'abcdefghijklmnopqrstuvwxyz':
